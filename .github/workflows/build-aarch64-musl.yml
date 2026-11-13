@@ -1,49 +1,64 @@
-name: Build Obscura aarch64-linux-musl
+name: Build Obscura v0.2.6 (stealth + render) aarch64-musl
 
 on:
   workflow_dispatch:
-    inputs:
-      features:
-        description: 'Cargo features (留空为默认 render；可选: stealth 或 no-default-features)'
-        required: false
-        default: ''
+  push:
+    branches:
+      - build-v0.2.6-musl
 
 jobs:
-  build-musl:
-    runs-on: ubuntu-latest
+  build-stealth-render-musl:
+    runs-on: ubuntu-24.04-arm
     env:
       TARGET: aarch64-unknown-linux-musl
       CARGO_TERM_COLOR: always
+      # 显式指定 musl C/C++ 编译器，确保 BoringSSL 与底层 C 库全静态链接
+      CC_aarch64_unknown_linux_musl: musl-gcc
+      CXX_aarch64_unknown_linux_musl: g++
+      AR_aarch64_unknown_linux_musl: ar
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
 
     steps:
-      - name: Checkout v0.2.6
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install musl and BoringSSL build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools musl-dev cmake perl pkg-config build-essential clang libclang-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-unknown-linux-musl
 
-      - name: Install cross
-        uses: taiki-e/install-action@cross
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-aarch64-musl-stealth-render-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build binary with cross
+      - name: Build obscura-cli (render + stealth)
         run: |
-          if [ -n "${{ github.event.inputs.features }}" ]; then
-            cross build --release --target $TARGET -p obscura-cli --features "${{ github.event.inputs.features }}"
-          else
-            cross build --release --target $TARGET -p obscura-cli
-          fi
+          # 默认已开启 render，叠加 --features stealth 即同时包含两者
+          cargo build --release --target $TARGET -p obscura-cli --features stealth
 
-      - name: Package binary
+      - name: Verify static binary & package
         run: |
           mkdir -p dist
           cp target/$TARGET/release/obscura dist/
           strip dist/obscura || true
-          tar -czvf obscura-v0.2.6-aarch64-unknown-linux-musl.tar.gz -C dist obscura
+          file dist/obscura
+          ldd dist/obscura || true
+          tar -czvf obscura-v0.2.6-stealth-aarch64-unknown-linux-musl.tar.gz -C dist obscura
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: obscura-aarch64-linux-musl
-          path: obscura-v0.2.6-aarch64-unknown-linux-musl.tar.gz
+          name: obscura-v0.2.6-stealth-aarch64-musl
+          path: obscura-v0.2.6-stealth-aarch64-unknown-linux-musl.tar.gz
