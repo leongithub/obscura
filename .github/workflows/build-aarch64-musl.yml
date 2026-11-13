@@ -1,0 +1,49 @@
+name: Build Obscura aarch64-linux-musl
+
+on:
+  workflow_dispatch:
+    inputs:
+      features:
+        description: 'Cargo features (留空为默认 render；可选: stealth 或 no-default-features)'
+        required: false
+        default: ''
+
+jobs:
+  build-musl:
+    runs-on: ubuntu-latest
+    env:
+      TARGET: aarch64-unknown-linux-musl
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - name: Checkout v0.2.6
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - name: Install cross
+        uses: taiki-e/install-action@cross
+
+      - name: Build binary with cross
+        run: |
+          if [ -n "${{ github.event.inputs.features }}" ]; then
+            cross build --release --target $TARGET -p obscura-cli --features "${{ github.event.inputs.features }}"
+          else
+            cross build --release --target $TARGET -p obscura-cli
+          fi
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp target/$TARGET/release/obscura dist/
+          strip dist/obscura || true
+          tar -czvf obscura-v0.2.6-aarch64-unknown-linux-musl.tar.gz -C dist obscura
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: obscura-aarch64-linux-musl
+          path: obscura-v0.2.6-aarch64-unknown-linux-musl.tar.gz
